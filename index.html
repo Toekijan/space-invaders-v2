@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Space Invaders Retro Game</title>
+
+    <!-- iOS / iPadOS: Toevoegen aan beginscherm als volwaardige app (geen Safari-balken) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Space Invaders">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#05050d">
+    <meta name="format-detection" content="telephone=no">
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts voor Retro Arcade Look -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        html {
+            /* Voorkom bounce/rubber-band scroll en pull-to-refresh op iOS Safari */
+            overflow: hidden;
+            height: 100%;
+            /* Fallback + dynamische viewport-hoogte (houdt rekening met Safari-balken) */
+            height: 100dvh;
+        }
+
+        body {
+            font-family: 'Press Start 2P', monospace;
+            background-color: #05050d;
+            color: #ffffff;
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+            height: 100%;
+            height: 100dvh;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            /* Ruimte reserveren voor notch / dynamic island / home-indicator */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: max(env(safe-area-inset-left), 0.5rem);
+            padding-right: max(env(safe-area-inset-right), 0.5rem);
+            box-sizing: border-box;
+        }
+
+        /* Neon Glow Effecten */
+        .neon-text-green {
+            text-shadow: 0 0 5px #00ff66, 0 0 10px #00ff66;
+        }
+        .neon-text-red {
+            text-shadow: 0 0 5px #ff0055, 0 0 10px #ff0055;
+        }
+        .neon-border {
+            box-shadow: 0 0 15px rgba(0, 255, 102, 0.4), inset 0 0 15px rgba(0, 255, 102, 0.2);
+        }
+
+        /* Retro Canvas CRT Lijnen Effect */
+        .crt-container {
+            position: relative;
+            overflow: hidden;
+        }
+        .crt-container::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.6;
+        }
+
+        /* Canvas Responsiviteit */
+        canvas {
+            image-rendering: pixelated;
+            background-color: #000000;
+        }
+
+        /* Mobiele Aanraakknopen Styling */
+        .touch-btn {
+            active: scale-95;
+            transition: transform 0.05s ease;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col items-center justify-between p-2 sm:p-4 select-none">
+
+    <!-- Bovenste Game Header / HUD -->
+    <header class="w-full max-w-4xl flex flex-wrap justify-between items-center my-2 px-2 text-xs sm:text-sm">
+        <div class="flex flex-col mb-1 sm:mb-0">
+            <span class="text-gray-400">SCORE</span>
+            <span id="scoreDisplay" class="text-green-400 neon-text-green text-sm sm:text-lg">0000</span>
+        </div>
+        <div class="flex flex-col items-center mb-1 sm:mb-0">
+            <span class="text-gray-400">HOOGSTE SCORE</span>
+            <span id="highScoreDisplay" class="text-yellow-400 text-sm sm:text-lg">0000</span>
+        </div>
+        <div class="flex flex-col items-end">
+            <span class="text-gray-400">NIVEAU</span>
+            <span id="levelDisplay" class="text-cyan-400 text-sm sm:text-lg">1</span>
+        </div>
+    </header>
+
+    <!-- Hoofd Container met Game Canvas -->
+    <main class="relative w-full max-w-4xl flex flex-col items-center justify-center my-auto min-h-0 flex-1">
+        <div class="crt-container w-full border-4 border-green-500 rounded-lg neon-border bg-black aspect-[4/3] flex items-center justify-center relative" style="max-height: 65dvh;">
+            
+            <canvas id="gameCanvas" width="800" height="600" class="w-full h-full block rounded"></canvas>
+
+            <!-- Start / Pauze / Game Over Overlays -->
+            <div id="overlayScreen" class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center z-20">
+                <h1 id="overlayTitle" class="text-2xl sm:text-4xl text-green-400 neon-text-green mb-4 leading-relaxed">
+                    SPACE INVADERS
+                </h1>
+                <p id="overlaySubtitle" class="text-xs sm:text-sm text-gray-300 mb-8 max-w-md leading-loose">
+                    Druk op <span class="text-yellow-300">SPATIE</span> of <span class="text-yellow-300">TIK OP HET SCHERM</span> om te starten!
+                </p>
+                <button id="startBtn" class="px-6 py-3 bg-green-500 text-black font-bold text-sm sm:text-base rounded hover:bg-green-400 transition transform active:scale-95 shadow-lg shadow-green-500/50">
+                    SPEEL NU
+                </button>
+            </div>
+        </div>
+
+        <!-- Levens & status onder het canvas -->
+        <div class="w-full flex justify-between items-center mt-3 px-2 text-xs sm:text-sm">
+            <div class="flex items-center gap-2">
+                <span class="text-gray-400">LEVENS:</span>
+                <div id="livesContainer" class="flex gap-1 text-red-500 text-base">
+                    <!-- Harten icoontjes worden dynamisch ingevoegd -->
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="audioToggleBtn" class="px-3 py-1 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 text-xs border border-gray-600">
+                    🔊 GELUID
+                </button>
+                <button id="pauseBtn" class="px-3 py-1 bg-gray-800 text-gray-300 rounded hover:bg-gray-700 text-xs border border-gray-600">
+                    ⏸ PAUZE
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Mobiele Aanraakbediening (zichtbaar op alle aanraakschermen, incl. iPad) -->
+    <footer id="touchControls" class="w-full max-w-4xl flex justify-between items-stretch gap-3 mt-3 hidden"
+            style="padding-bottom: env(safe-area-inset-bottom);">
+        <div class="flex gap-3">
+            <button id="btnLeft" class="touch-btn bg-gray-800 border-2 border-gray-600 active:bg-green-600 text-white w-20 py-4 rounded-lg flex items-center justify-center text-xl shadow">
+                ◀
+            </button>
+            <button id="btnRight" class="touch-btn bg-gray-800 border-2 border-gray-600 active:bg-green-600 text-white w-20 py-4 rounded-lg flex items-center justify-center text-xl shadow">
+                ▶
+            </button>
+        </div>
+        <button id="btnShoot" class="touch-btn bg-red-600 border-2 border-red-400 active:bg-red-700 text-white flex-1 py-4 rounded-lg flex items-center justify-center text-sm font-bold shadow neon-text-red">
+            SCHIETEN
+        </button>
+    </footer>
+
+    <!-- Instructies Footer voor Desktop -->
+    <div class="hidden sm:block text-center text-[10px] text-gray-500 my-2">
+        Besturing: <span class="text-gray-300">Pijltjes ← →</span> of <span class="text-gray-300">A / D</span> om te bewegen | <span class="text-gray-300">SPATIE</span> om te schieten | <span class="text-gray-300">P</span> voor Pauze
+    </div>
+
+    <!-- Javascript Logic -->
+    <script>
+        // ==========================================
+        // 1. CONFIGURATIE EN GLOBALE VARIABELEN
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elementen
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        const levelDisplay = document.getElementById('levelDisplay');
+        const livesContainer = document.getElementById('livesContainer');
+        const overlayScreen = document.getElementById('overlayScreen');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlaySubtitle = document.getElementById('overlaySubtitle');
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const audioToggleBtn = document.getElementById('audioToggleBtn');
+
+        // Game Instellingen
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+
+        let score = 0;
+        let highScore = localStorage.getItem('space_invaders_highscore') || 0;
+        let level = 1;
+        let lives = 3;
+        let gameState = 'START'; // 'START', 'PLAYING', 'PAUSED', 'GAMEOVER', 'VICTORY'
+        let audioMuted = false;
+
+        // Audio Context voor Synthesizer Geluiden (Retro Web Audio API)
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                // iOS Safari heeft een "silent buffer unlock" nodig binnen de
+                // eerste touch-gebeurtenis, anders blijft de context op sommige
+                // iPhones/iPads permanent gedempt.
+                const unlockBuffer = audioCtx.createBuffer(1, 1, 22050);
+                const unlockSource = audioCtx.createBufferSource();
+                unlockSource.buffer = unlockBuffer;
+                unlockSource.connect(audioCtx.destination);
+                unlockSource.start(0);
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // ==========================================
+        // 2. GELUIDSEFFECTEN SYNTHESIZER
+        // ==========================================
+        function playSound(type) {
+            if (audioMuted || !audioCtx) return;
+
+            try {
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'shoot') {
+                    // Schietgeluid speler
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(800, now);
+                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.15);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else if (type === 'explosion') {
+                    // Explosie geluid
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.linearRampToValueAtTime(30, now + 0.25);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (type === 'alienStep') {
+                    // Invader stap geluid
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(100, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'ufo') {
+                    // UFO geluid
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.linearRampToValueAtTime(600, now + 0.1);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } else if (type === 'victory') {
+                    // Overwinning melodietje
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.1); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.2); // G5
+                    osc.frequency.setValueAtTime(1046.50, now + 0.3); // C6
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                    osc.start(now);
+                    osc.stop(now + 0.5);
+                }
+            } catch (e) {
+                console.error("Audio error:", e);
+            }
+        }
+
+        // ==========================================
+        // 3. PIXEL ART MATRICES VOOR GRAFISCHE ELEMENTS
+        // ==========================================
+        // Pixel kaarten voor authentieke Space Invaders look
+        const SPRITES = {
+            // Alien Type 1 (Bovenste rij - Octo/Squid - 30pt)
+            alien1: [
+                [
+                    "00001000000",
+                    "00011100000",
+                    "00111110000",
+                    "01101011000",
+                    "01111111000",
+                    "00010100000",
+                    "00100010000",
+                    "01000001000"
+                ],
+                [
+                    "00001000000",
+                    "00011100000",
+                    "00111110000",
+                    "01101011000",
+                    "01111111000",
+                    "00101010000",
+                    "01000001000",
+                    "00100010000"
+                ]
+            ],
+            // Alien Type 2 (Middelste rij - Crab - 20pt)
+            alien2: [
+                [
+                    "00100000100",
+                    "00010001000",
+                    "00111111100",
+                    "01101110110",
+                    "11111111111",
+                    "10111111101",
+                    "10100000101",
+                    "00011011000"
+                ],
+                [
+                    "00100000100",
+                    "10010001001",
+                    "10111111101",
+                    "11101110111",
+                    "11111111111",
+                    "00111111100",
+                    "00100000100",
+                    "01000001000"
+                ]
+            ],
+            // Alien Type 3 (Onderste rij - Jelly - 10pt)
+            alien3: [
+                [
+                    "000011110000",
+                    "011111111110",
+                    "111111111111",
+                    "111001100111",
+                    "111111111111",
+                    "000110011000",
+                    "001101101100",
+                    "110000000011"
+                ],
+                [
+                    "000011110000",
+                    "011111111110",
+                    "111111111111",
+                    "111001100111",
+                    "111111111111",
+                    "000110011000",
+                    "001101101100",
+                    "000110011000"
+                ]
+            ],
+            // Speler Kanon
+            player: [
+                "00000100000",
+                "00001110000",
+                "00001110000",
+                "01111111110",
+                "11111111111",
+                "11111111111"
+            ],
+            // UFO / Bonus Schip
+            ufo: [
+                "00001111110000",
+                "00111111111100",
+                "01111111111110",
+                "01101101101110",
+                "11111111111111",
+                "00011001100110",
+                "00001000010000"
+            ]
+        };
+
+        // Functie om een sprite op canvas te tekenen vanuit pixel grid
+        function drawPixelSprite(ctx, spriteArray, x, y, pixelSize, color) {
+            ctx.fillStyle = color;
+            for (let r = 0; r < spriteArray.length; r++) {
+                for (let c = 0; c < spriteArray[r].length; c++) {
+                    if (spriteArray[r][c] === '1') {
+                        ctx.fillRect(x + c * pixelSize, y + r * pixelSize, pixelSize, pixelSize);
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 4. GAME OBJECTEN KLASSEN
+        // ==========================================
+
+        // Speler Klasse
+        class Player {
+            constructor() {
+                this.width = 44;
+                this.height = 24;
+                this.pixelSize = 4;
+                this.x = CANVAS_WIDTH / 2 - this.width / 2;
+                this.y = CANVAS_HEIGHT - 60;
+                this.speed = 5;
+                this.isMovingLeft = false;
+                this.isMovingRight = false;
+                this.cooldown = 0;
+            }
+
+            draw() {
+                drawPixelSprite(ctx, SPRITES.player, this.x, this.y, this.pixelSize, '#00ff66');
+            }
+
+            update() {
+                if (this.isMovingLeft && this.x > 20) {
+                    this.x -= this.speed;
+                }
+                if (this.isMovingRight && this.x < CANVAS_WIDTH - this.width - 20) {
+                    this.x += this.speed;
+                }
+                if (this.cooldown > 0) {
+                    this.cooldown--;
+                }
+            }
+        }
+
+        // Kogel Klasse (voor speler en aliens)
+        class Bullet {
+            constructor(x, y, speed, isEnemy = false) {
+                this.x = x;
+                this.y = y;
+                this.width = 4;
+                this.height = 12;
+                this.speed = speed;
+                this.isEnemy = isEnemy;
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                ctx.fillStyle = this.isEnemy ? '#ff0055' : '#ffff00';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                // Glow effect
+                ctx.shadowColor = this.isEnemy ? '#ff0055' : '#ffff00';
+                ctx.shadowBlur = 6;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.shadowBlur = 0;
+            }
+
+            update() {
+                this.y += this.speed;
+                if (this.y < 0 || this.y > CANVAS_HEIGHT) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        // Alien/Indringer Klasse
+        class Alien {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 1, 2 of 3
+                this.pixelSize = 3;
+                this.frame = 0;
+                this.markedForDeletion = false;
+
+                if (type === 1) {
+                    this.width = 11 * this.pixelSize;
+                    this.height = 8 * this.pixelSize;
+                    this.points = 30;
+                    this.color = '#33ffff'; // Cyan
+                } else if (type === 2) {
+                    this.width = 11 * this.pixelSize;
+                    this.height = 8 * this.pixelSize;
+                    this.points = 20;
+                    this.color = '#ff33cc'; // Magenta
+                } else {
+                    this.width = 12 * this.pixelSize;
+                    this.height = 8 * this.pixelSize;
+                    this.points = 10;
+                    this.color = '#00ff66'; // Groen
+                }
+            }
+
+            draw() {
+                const spriteFrames = SPRITES[`alien${this.type}`];
+                drawPixelSprite(ctx, spriteFrames[this.frame], this.x, this.y, this.pixelSize, this.color);
+            }
+        }
+
+        // UFO / Bonus Schip Klasse
+        class UFO {
+            constructor() {
+                this.pixelSize = 3;
+                this.width = 14 * this.pixelSize;
+                this.height = 7 * this.pixelSize;
+                this.direction = Math.random() < 0.5 ? 1 : -1;
+                this.x = this.direction === 1 ? -this.width : CANVAS_WIDTH;
+                this.y = 40;
+                this.speed = 2.5 * this.direction;
+                this.points = [50, 100, 150, 300][Math.floor(Math.random() * 4)];
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                drawPixelSprite(ctx, SPRITES.ufo, this.x, this.y, this.pixelSize, '#ff0033');
+            }
+
+            update() {
+                this.x += this.speed;
+                if ((this.direction === 1 && this.x > CANVAS_WIDTH + 20) || 
+                    (this.direction === -1 && this.x < -this.width - 20)) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        // Verdedigings Bunker / Schild Klasse
+        class Bunker {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.pixelSize = 4;
+                this.cols = 16;
+                this.rows = 12;
+                this.width = this.cols * this.pixelSize;
+                this.height = this.rows * this.pixelSize;
+                
+                // Pixel raster voor verwoestbaar schild
+                this.grid = [];
+                for (let r = 0; r < this.rows; r++) {
+                    const row = [];
+                    for (let c = 0; c < this.cols; c++) {
+                        // Vorm van de bunker (boogvormig)
+                        if (r < 3) {
+                            row.push(c >= 2 && c <= 13 ? 1 : 0);
+                        } else if (r < 8) {
+                            row.push(1);
+                        } else {
+                            row.push(c < 5 || c > 10 ? 1 : 0);
+                        }
+                    }
+                    this.grid.push(row);
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = '#00ffcc';
+                for (let r = 0; r < this.rows; r++) {
+                    for (let c = 0; c < this.cols; c++) {
+                        if (this.grid[r][c] === 1) {
+                            ctx.fillRect(
+                                this.x + c * this.pixelSize, 
+                                this.y + r * this.pixelSize, 
+                                this.pixelSize, 
+                                this.pixelSize
+                            );
+                        }
+                    }
+                }
+            }
+
+            // Schade toebrengen aan het schild
+            damage(hitX, hitY, radius = 2) {
+                const gridC = Math.floor((hitX - this.x) / this.pixelSize);
+                const gridR = Math.floor((hitY - this.y) / this.pixelSize);
+
+                for (let r = gridR - radius; r <= gridR + radius; r++) {
+                    for (let c = gridC - radius; c <= gridC + radius; c++) {
+                        if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) {
+                            if (Math.random() > 0.3) {
+                                this.grid[r][c] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Controleert of er op deze wereldcoördinaat nog een intacte
+            // bunkerpixel zit. Buiten het raster of op een al kapotgeschoten
+            // plek telt als "niet solide", zodat kogels erdoorheen kunnen.
+            isSolidAt(worldX, worldY) {
+                const gridC = Math.floor((worldX - this.x) / this.pixelSize);
+                const gridR = Math.floor((worldY - this.y) / this.pixelSize);
+                if (gridR < 0 || gridR >= this.rows || gridC < 0 || gridC >= this.cols) {
+                    return false;
+                }
+                return this.grid[gridR][gridC] === 1;
+            }
+        }
+
+        // Deeltjes/Explosie Effecten
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.size = Math.random() * 3 + 1;
+                this.speedX = (Math.random() - 0.5) * 6;
+                this.speedY = (Math.random() - 0.5) * 6;
+                this.color = color;
+                this.alpha = 1;
+                this.decay = Math.random() * 0.03 + 0.02;
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.restore();
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.alpha -= this.decay;
+                if (this.alpha <= 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        // Zwevende score tekst (bijv. bij het raken van UFO)
+        class FloatingText {
+            constructor(text, x, y, color = '#ffffff') {
+                this.text = text;
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.alpha = 1;
+                this.markedForDeletion = false;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.fillStyle = this.color;
+                ctx.font = '12px "Press Start 2P"';
+                ctx.fillText(this.text, this.x, this.y);
+                ctx.restore();
+            }
+
+            update() {
+                this.y -= 0.8;
+                this.alpha -= 0.02;
+                if (this.alpha <= 0) {
+                    this.markedForDeletion = true;
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. GAME ENGINE EN SPREEKSTRUCTUUR
+        // ==========================================
+        let player = new Player();
+        let bullets = [];
+        let enemyBullets = [];
+        let aliens = [];
+        let bunkers = [];
+        let particles = [];
+        let floatingTexts = [];
+        let ufo = null;
+
+        // Alien beweging variabelen
+        let alienDirection = 1; // 1 = Rechts, -1 = Links
+        let alienMoveTimer = 0;
+        let alienMoveInterval = 40; // Aantal frames per stap
+        let ufoTimer = 0;
+        let stars = [];
+
+        // Sterrenachtergrond genereren
+        for (let i = 0; i < 60; i++) {
+            stars.push({
+                x: Math.random() * CANVAS_WIDTH,
+                y: Math.random() * CANVAS_HEIGHT,
+                size: Math.random() * 2 + 1,
+                brightness: Math.random()
+            });
+        }
+
+        // Vorming van de vloot aliens
+        function createAlienFleet() {
+            aliens = [];
+            const rows = 5;
+            const cols = 10;
+            const startX = 100;
+            const startY = 90;
+            const spacingX = 52;
+            const spacingY = 40;
+
+            for (let r = 0; r < rows; r++) {
+                let type = 3;
+                if (r === 0) type = 1;      // Bovenste rij: Type 1
+                else if (r < 3) type = 2;   // Middelste rijen: Type 2
+
+                for (let c = 0; c < cols; c++) {
+                    aliens.push(new Alien(startX + c * spacingX, startY + r * spacingY, type));
+                }
+            }
+            alienMoveInterval = Math.max(10, 45 - level * 4);
+        }
+
+        // Bunkers aanmaken
+        function createBunkers() {
+            bunkers = [];
+            const bunkerCount = 4;
+            const spacing = CANVAS_WIDTH / (bunkerCount + 1);
+            for (let i = 0; i < bunkerCount; i++) {
+                bunkers.push(new Bunker(spacing * (i + 1) - 32, CANVAS_HEIGHT - 140));
+            }
+        }
+
+        // Explosie effect toevoegen
+        function createExplosion(x, y, color, count = 15) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        // Game Reset / Start
+        function startNewGame() {
+            initAudio();
+            score = 0;
+            level = 1;
+            lives = 3;
+            bullets = [];
+            enemyBullets = [];
+            particles = [];
+            floatingTexts = [];
+            ufo = null;
+            player = new Player();
+            
+            updateHUD();
+            createAlienFleet();
+            createBunkers();
+
+            gameState = 'PLAYING';
+            overlayScreen.classList.add('hidden');
+        }
+
+        // Volgend niveau laden
+        function nextLevel() {
+            level++;
+            playSound('victory');
+            bullets = [];
+            enemyBullets = [];
+            createAlienFleet();
+            updateHUD();
+        }
+
+        // UPDATE HUD DISPLAY
+        function updateHUD() {
+            scoreDisplay.innerText = String(score).padStart(4, '0');
+            highScoreDisplay.innerText = String(highScore).padStart(4, '0');
+            levelDisplay.innerText = level;
+
+            // Levens Harten
+            livesContainer.innerHTML = '';
+            for (let i = 0; i < lives; i++) {
+                livesContainer.innerHTML += '<span>🚀</span>';
+            }
+        }
+
+        // ==========================================
+        // 6. BOTSINGSDETECTIE & HOOFD-LUS
+        // ==========================================
+        function checkCollisions() {
+            // 1. Speler Kogels vs Aliens
+            bullets.forEach(bullet => {
+                aliens.forEach(alien => {
+                    if (!bullet.markedForDeletion && !alien.markedForDeletion) {
+                        if (bullet.x < alien.x + alien.width &&
+                            bullet.x + bullet.width > alien.x &&
+                            bullet.y < alien.y + alien.height &&
+                            bullet.y + bullet.height > alien.y) {
+                            
+                            bullet.markedForDeletion = true;
+                            alien.markedForDeletion = true;
+                            score += alien.points;
+                            
+                            createExplosion(alien.x + alien.width/2, alien.y + alien.height/2, alien.color);
+                            playSound('explosion');
+
+                            if (score > highScore) {
+                                highScore = score;
+                                localStorage.setItem('space_invaders_highscore', highScore);
+                            }
+                            updateHUD();
+                        }
+                    }
+                });
+
+                // Speler Kogels vs UFO
+                if (ufo && !bullet.markedForDeletion && !ufo.markedForDeletion) {
+                    if (bullet.x < ufo.x + ufo.width &&
+                        bullet.x + bullet.width > ufo.x &&
+                        bullet.y < ufo.y + ufo.height &&
+                        bullet.y + bullet.height > ufo.y) {
+                        
+                        bullet.markedForDeletion = true;
+                        ufo.markedForDeletion = true;
+                        score += ufo.points;
+                        
+                        createExplosion(ufo.x + ufo.width/2, ufo.y + ufo.height/2, '#ff0055', 25);
+                        floatingTexts.push(new FloatingText(`+${ufo.points}`, ufo.x, ufo.y, '#ffff00'));
+                        playSound('explosion');
+
+                        if (score > highScore) {
+                            highScore = score;
+                            localStorage.setItem('space_invaders_highscore', highScore);
+                        }
+                        updateHUD();
+                    }
+                }
+
+                // Speler Kogels vs Bunkers (alleen blokkeren bij nog intacte pixel;
+                // door al kapotgeschoten plekken vliegt de kogel gewoon door)
+                bunkers.forEach(bunker => {
+                    if (!bullet.markedForDeletion &&
+                        bullet.x > bunker.x && bullet.x < bunker.x + bunker.width &&
+                        bullet.y > bunker.y && bullet.y < bunker.y + bunker.height) {
+
+                        if (bunker.isSolidAt(bullet.x, bullet.y)) {
+                            bunker.damage(bullet.x, bullet.y);
+                            bullet.markedForDeletion = true;
+                        }
+                    }
+                });
+            });
+
+            // 2. Vijand Kogels vs Speler
+            enemyBullets.forEach(bullet => {
+                if (!bullet.markedForDeletion) {
+                    if (bullet.x < player.x + player.width &&
+                        bullet.x + bullet.width > player.x &&
+                        bullet.y < player.y + player.height &&
+                        bullet.y + bullet.height > player.y) {
+                        
+                        bullet.markedForDeletion = true;
+                        lives--;
+                        createExplosion(player.x + player.width/2, player.y + player.height/2, '#ff0000', 30);
+                        playSound('explosion');
+                        updateHUD();
+
+                        if (lives <= 0) {
+                            gameOver();
+                        } else {
+                            // Reset speler positie
+                            player.x = CANVAS_WIDTH / 2 - player.width / 2;
+                        }
+                    }
+
+                    // Vijand Kogels vs Bunkers (alleen blokkeren bij nog intacte pixel)
+                    bunkers.forEach(bunker => {
+                        if (!bullet.markedForDeletion &&
+                            bullet.x > bunker.x && bullet.x < bunker.x + bunker.width &&
+                            bullet.y > bunker.y && bullet.y < bunker.y + bunker.height) {
+
+                            if (bunker.isSolidAt(bullet.x, bullet.y)) {
+                                bunker.damage(bullet.x, bullet.y);
+                                bullet.markedForDeletion = true;
+                            }
+                        }
+                    });
+                }
+            });
+
+            // 3. Aliens bereiken onderkant of Bunkers
+            aliens.forEach(alien => {
+                if (alien.y + alien.height >= player.y) {
+                    gameOver();
+                }
+
+                bunkers.forEach(bunker => {
+                    if (alien.x < bunker.x + bunker.width &&
+                        alien.x + alien.width > bunker.x &&
+                        alien.y < bunker.y + bunker.height &&
+                        alien.y + alien.height > bunker.y) {
+                        // Vreet bunker op
+                        bunker.damage(alien.x + alien.width/2, alien.y + alien.height/2, 4);
+                    }
+                });
+            });
+        }
+
+        // Game Over Functie
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            overlayTitle.innerText = "GAME OVER";
+            overlayTitle.className = "text-2xl sm:text-4xl text-red-500 neon-text-red mb-4 leading-relaxed";
+            overlaySubtitle.innerHTML = `Eindscore: <span class="text-yellow-300">${score}</span><br>Druk op <span class="text-green-400">SPEEL NU</span> om opnieuw te proberen.`;
+            startBtn.innerText = "OPNIEUW PROBEREN";
+            overlayScreen.classList.remove('hidden');
+        }
+
+        // HOOFD UPDATE LUS
+        function update() {
+            if (gameState !== 'PLAYING') return;
+
+            player.update();
+
+            // Kogels Updaten
+            bullets.forEach(b => b.update());
+            enemyBullets.forEach(b => b.update());
+            bullets = bullets.filter(b => !b.markedForDeletion);
+            enemyBullets = enemyBullets.filter(b => !b.markedForDeletion);
+
+            // Deeltjes Updaten
+            particles.forEach(p => p.update());
+            particles = particles.filter(p => !p.markedForDeletion);
+
+            // Zwevende Tekst Updaten
+            floatingTexts.forEach(ft => ft.update());
+            floatingTexts = floatingTexts.filter(ft => !ft.markedForDeletion);
+
+            // UFO Logica
+            ufoTimer++;
+            if (!ufo && ufoTimer > 800) {
+                if (Math.random() < 0.005) {
+                    ufo = new UFO();
+                    ufoTimer = 0;
+                }
+            }
+
+            if (ufo) {
+                ufo.update();
+                if (Math.random() < 0.1) playSound('ufo');
+                if (ufo.markedForDeletion) ufo = null;
+            }
+
+            // Alien beweging op intervallen
+            alienMoveTimer++;
+            if (alienMoveTimer >= alienMoveInterval) {
+                alienMoveTimer = 0;
+                playSound('alienStep');
+
+                let touchEdge = false;
+
+                // Controleer of vloot rand raakt
+                aliens.forEach(alien => {
+                    alien.frame = alien.frame === 0 ? 1 : 0; // Wissel animatie frame
+                    if ((alienDirection === 1 && alien.x + alien.width >= CANVAS_WIDTH - 20) ||
+                        (alienDirection === -1 && alien.x <= 20)) {
+                        touchEdge = true;
+                    }
+                });
+
+                if (touchEdge) {
+                    alienDirection *= -1;
+                    aliens.forEach(alien => {
+                        alien.y += 18; // Zak een rij omlaag
+                    });
+                } else {
+                    aliens.forEach(alien => {
+                        alien.x += alienDirection * 10;
+                    });
+                }
+
+                // Willekeurige alien schiet logica — de kans schaalt mee met de
+                // beweeginterval, zodat een sneller bewegende (kleinere) vloot niet
+                // ook per seconde veel vaker gaat schieten. Bij interval 40 (traag,
+                // begin level) is de kans 0.65; bij interval 3 (zeer snel, bijna
+                // laatste aliens) daalt de kans naar ongeveer 0.05.
+                const baseInterval = Math.max(10, 45 - level * 4);
+                const shootChance = Math.max(0.05, 0.65 * (alienMoveInterval / baseInterval));
+                if (aliens.length > 0 && Math.random() < shootChance) {
+                    const randomAlien = aliens[Math.floor(Math.random() * aliens.length)];
+                    enemyBullets.push(new Bullet(randomAlien.x + randomAlien.width/2, randomAlien.y + randomAlien.height, 4, true));
+                }
+            }
+
+            // Verwijder dode aliens & versnel overgebleven vloot
+            const remainingAliens = aliens.length;
+            aliens = aliens.filter(a => !a.markedForDeletion);
+
+            if (aliens.length === 0) {
+                nextLevel();
+            } else if (aliens.length !== remainingAliens) {
+                // Versnel de stap-frequentie naarmate er minder aliens zijn
+                alienMoveInterval = Math.max(3, Math.floor((aliens.length / 50) * 40));
+            }
+
+            checkCollisions();
+        }
+
+        // HOOFD TEKEN LUS
+        function render() {
+            // Scherm leegmaken
+            ctx.fillStyle = '#05050d';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Sterrenachtergrond tekenen
+            stars.forEach(star => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+
+            // Groene grondlijn
+            ctx.strokeStyle = '#00ff66';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, CANVAS_HEIGHT - 30);
+            ctx.lineTo(CANVAS_WIDTH, CANVAS_HEIGHT - 30);
+            ctx.stroke();
+
+            // Objecten Tekenen
+            bunkers.forEach(bunker => bunker.draw());
+            player.draw();
+            aliens.forEach(alien => alien.draw());
+            if (ufo) ufo.draw();
+            bullets.forEach(b => b.draw());
+            enemyBullets.forEach(b => b.draw());
+            particles.forEach(p => p.draw());
+            floatingTexts.forEach(ft => ft.draw());
+        }
+
+        // Game Loop Trigger
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ==========================================
+        // 7. BESTURING & INPUT HANDLERS
+        // ==========================================
+
+        // Schiet actie
+        function shootBullet() {
+            if (gameState === 'PLAYING' && player.cooldown === 0) {
+                bullets.push(new Bullet(player.x + player.width / 2 - 2, player.y, -7, false));
+                playSound('shoot');
+                player.cooldown = 20; // Vertraging tussen opeenvolgende schoten
+            }
+        }
+
+        // Toetsenbord Events
+        window.addEventListener('keydown', (e) => {
+            initAudio();
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+                player.isMovingLeft = true;
+            }
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+                player.isMovingRight = true;
+            }
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (gameState === 'START' || gameState === 'GAMEOVER') {
+                    startNewGame();
+                } else {
+                    shootBullet();
+                }
+            }
+            if (e.code === 'KeyP') {
+                togglePause();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+                player.isMovingLeft = false;
+            }
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+                player.isMovingRight = false;
+            }
+        });
+
+        // Mobiele Aanraak Knoppen Bedienen
+        const btnLeft = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        const btnShoot = document.getElementById('btnShoot');
+
+        const bindTouch = (elem, onPress, onRelease) => {
+            elem.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                initAudio();
+                onPress();
+            });
+            elem.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                if (onRelease) onRelease();
+            });
+            elem.addEventListener('mousedown', () => {
+                initAudio();
+                onPress();
+            });
+            elem.addEventListener('mouseup', () => {
+                if (onRelease) onRelease();
+            });
+        };
+
+        bindTouch(btnLeft, () => player.isMovingLeft = true, () => player.isMovingLeft = false);
+        bindTouch(btnRight, () => player.isMovingRight = true, () => player.isMovingRight = false);
+        bindTouch(btnShoot, () => shootBullet());
+
+        // UI Knop Events
+        startBtn.addEventListener('click', () => {
+            startNewGame();
+        });
+
+        function togglePause() {
+            if (gameState === 'PLAYING') {
+                gameState = 'PAUSED';
+                overlayTitle.innerText = "PAUZE";
+                overlayTitle.className = "text-2xl sm:text-4xl text-yellow-400 mb-4 leading-relaxed";
+                overlaySubtitle.innerText = "Het spel is gepauzeerd.";
+                startBtn.innerText = "HERVAT";
+                overlayScreen.classList.remove('hidden');
+            } else if (gameState === 'PAUSED') {
+                gameState = 'PLAYING';
+                overlayScreen.classList.add('hidden');
+            }
+        }
+
+        pauseBtn.addEventListener('click', togglePause);
+
+        audioToggleBtn.addEventListener('click', () => {
+            audioMuted = !audioMuted;
+            audioToggleBtn.innerText = audioMuted ? '🔇 DEMPEN' : '🔊 GELUID';
+        });
+
+        // Toon aanraakbediening op elk apparaat met touchscreen (iPhone én iPad,
+        // ongeacht schermbreedte — iPad valt anders buiten de sm-breakpoint)
+        const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+        if (isTouchDevice) {
+            document.getElementById('touchControls').classList.remove('hidden');
+            document.getElementById('touchControls').classList.add('flex');
+        }
+
+        // Voorkom dat dubbeltikken op iOS inzoomt op de knoppen/pagina
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // Voorkom pull-to-refresh / bounce-scroll wanneer buiten de knoppen wordt geveegd
+        document.body.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+
+        // Start het initialisatiescherm
+        updateHUD();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
